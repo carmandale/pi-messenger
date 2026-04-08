@@ -76,7 +76,7 @@ function makeMinimalState(overrides: Partial<MessengerState> = {}): MessengerSta
 
 // ─── Test Suite ──────────────────────────────────────────────────────────────
 
-describe("collab-integration: poll loop with real filesystem", () => {
+describe("collab-integration: poll loop with real filesystem artifacts", () => {
   let pollForCollaboratorMessage: typeof import("../../crew/handlers/collab.js").pollForCollaboratorMessage;
   let tmpDir: string;
   let inboxDir: string;
@@ -292,6 +292,46 @@ describe("collab-integration: poll loop with real filesystem", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBe("stalled");
+      expect(entry.lifecycle).toBe("error");
+    }
+  });
+
+  it("crash+provider race: exit after provider error → reports provider_error not crashed", async () => {
+    const logFile = path.join(tmpDir, "race.log");
+    fs.writeFileSync(logFile, "");
+    const proc = makeFakeProc(true);
+    const entry = makeCollabEntry({ proc, logFile, lifecycle: "spawning" });
+    const state = makeMinimalState();
+
+    // Simulate: provider error written to log, then process exits (same tick in real life)
+    setTimeout(() => {
+      fs.appendFileSync(logFile,
+        JSON.stringify({
+          type: "response",
+          command: "prompt",
+          success: false,
+          error: '429 {"type":"error","error":{"type":"rate_limit_error","message":"limit"}}',
+        }) + "\n",
+      );
+      // Process exits immediately after writing error
+      (proc as any).exitCode = 1;
+    }, 200);
+
+    const result = await pollForCollaboratorMessage({
+      inboxDir,
+      collabName: "TestCollab",
+      sendTimestamp: Date.now(),
+      entry,
+      stallThresholdMs: 5000,
+      pollTimeoutMs: 10000,
+      hardCeilingMs: 30000,
+      state,
+    });
+
+    // Must be provider_error, not crashed
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("provider_error");
       expect(entry.lifecycle).toBe("error");
     }
   });
