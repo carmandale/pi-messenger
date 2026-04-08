@@ -29,7 +29,7 @@ import { getAutoRegisterPaths, saveAutoRegisterPaths, matchesAutoRegisterPath } 
 import { readFeedEvents, logFeedEvent, pruneFeed, formatFeedLine, isCrewEvent, type FeedEvent } from "./feed.js";
 import { loadCrewConfig } from "./crew/utils/config.js";
 import { findCollaboratorByName, unregisterWorker } from "./crew/registry.js";
-import { pollForCollaboratorMessage, gracefulDismiss, DEFAULT_STALL_THRESHOLD_MS, MIN_STALL_THRESHOLD_MS, DEFAULT_POLL_TIMEOUT_MS } from "./crew/handlers/collab.js";
+import { pollForCollaboratorMessage, gracefulDismiss, classifyCrash, DEFAULT_STALL_THRESHOLD_MS, MIN_STALL_THRESHOLD_MS, DEFAULT_POLL_TIMEOUT_MS } from "./crew/handlers/collab.js";
 import { redactSensitiveText } from "./crew/utils/redaction.js";
 import * as path from "node:path";
 
@@ -501,20 +501,27 @@ export async function executeSend(
             );
           }
 
+          // D3: wall-clock duration for structured envelope (spec 068)
+          const sendDurationMs = Date.now() - sendTimestamp;
+
           // Send-path cancel/stall/crash: do NOT dismiss collaborator
           if (pollError === "crashed") {
+            const cc = classifyCrash(exitCode ?? null, logTail ?? "");
+            const nextStep = cc === "provider_error" ? "check_credentials" : "retry_spawn";
             return result(
-              `Message sent to ${recipient}, but collaborator crashed (exit code ${exitCode ?? "unknown"}).` +
+              `Message sent to ${recipient}, but collaborator crashed (exit code ${exitCode ?? "unknown"}, class: ${cc}).` +
               (logTail ? `\n\nLog tail:\n${logTail}` : "") +
               `\n\n(${remaining} message${remaining === 1 ? "" : "s"} remaining)`,
-              { mode: "send", sent: [recipient], failed: [], error: "collaborator_crashed", exitCode, logTail },
+              { mode: "send", sent: [recipient], failed: [], error: "collaborator_crashed", exitCode, logTail,
+                stage: "send", durationMs: sendDurationMs, crashClass: cc, nextStep },
             );
           }
           if (pollError === "cancelled") {
             return result(
               `Message sent to ${recipient}, but wait for reply was cancelled. Collaborator is still running.` +
               `\n\n(${remaining} message${remaining === 1 ? "" : "s"} remaining)`,
-              { mode: "send", sent: [recipient], failed: [], error: "cancelled" },
+              { mode: "send", sent: [recipient], failed: [], error: "cancelled",
+                stage: "send", durationMs: sendDurationMs },
             );
           }
           // stalled
@@ -522,7 +529,8 @@ export async function executeSend(
             `Message sent to ${recipient}, but no output for ${Math.round((stallDurationMs ?? 0) / 1000)}s. ` +
             `Collaborator is still running — retry sending or dismiss and re-spawn. Do NOT proceed without a collaborator.` +
             `\n\n(${remaining} message${remaining === 1 ? "" : "s"} remaining)`,
-            { mode: "send", sent: [recipient], failed: [], error: "stalled", name: recipient, stallDurationMs },
+            { mode: "send", sent: [recipient], failed: [], error: "stalled", name: recipient, stallDurationMs,
+              stage: "send", durationMs: sendDurationMs, nextStep: "escalate_to_user" },
           );
         }
 

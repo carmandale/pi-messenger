@@ -106,10 +106,28 @@ export interface PollOptions {
   state: MessengerState;
 }
 
+/** D3: Crash classification for structured error reporting (spec 068). */
+export type CrashClass = "provider_error" | "oom" | "signal" | "clean_exit" | "unknown";
+
+/** D3: Classify crash based on exit code and log tail (spec 068). */
+export function classifyCrash(exitCode: number | null, logTail: string): CrashClass {
+  if (exitCode === null) return "unknown";
+  if (exitCode === 137) return "oom";        // SIGKILL (OOM killer)
+  if (exitCode > 128) return "signal";       // Signal death (128 + signal number)
+  if (exitCode === 0) return "clean_exit";   // Normal exit without sending reply
+  if (logTail) {
+    const lastLine = logTail.split("\n").filter(l => l.trim()).pop() ?? "";
+    if (extractProviderTerminalErrorFromLogLine(lastLine)) return "provider_error";
+  }
+  return "unknown";
+}
+
 export type PollResult =
   | { ok: true; message: AgentMailMessage; peerComplete?: boolean }
-  | { ok: false; error: "crashed" | "cancelled" | "stalled"; exitCode?: number; logTail?: string; stallDurationMs?: number; stallType?: PollStallType }
-  | { ok: false; error: "provider_error"; providerError: ProviderTerminalError; logTail?: string };
+  | { ok: false; error: "crashed" | "cancelled" | "stalled"; exitCode?: number; logTail?: string; stallDurationMs?: number; stallType?: PollStallType;
+      stage?: "spawn" | "send"; durationMs?: number; nextStep?: string; crashClass?: CrashClass }
+  | { ok: false; error: "provider_error"; providerError: ProviderTerminalError; logTail?: string;
+      stage?: "spawn" | "send"; durationMs?: number; nextStep?: string };
 
 function sanitizeProviderTerminalError(providerError: ProviderTerminalError): ProviderTerminalError {
   return {
@@ -715,23 +733,29 @@ export async function executeSpawn(
       };
       const { error, exitCode, logTail, stallDurationMs, providerError } = errResult;
 
+      const spawnDurationMs = Date.now() - spawnStartTime;  // D3: wall-clock duration (spec 068)
+
       if (error === "provider_error" && providerError) {
         return finalizeSpawnProviderError(entry, collabName, providerError, logTail);
       }
 
       if (error === "crashed") {
+        const cc = classifyCrash(exitCode ?? null, logTail ?? "");  // D3 (spec 068)
+        const nextStep = cc === "provider_error" ? "check_credentials" : "retry_spawn";
         await gracefulDismiss(entry);
         return result(
-          `Error: Collaborator "${collabName}" crashed (exit code ${exitCode ?? "unknown"}).` +
+          `Error: Collaborator "${collabName}" crashed (exit code ${exitCode ?? "unknown"}, class: ${cc}).` +
           (logTail ? `\n\nLog tail:\n${logTail}` : ""),
-          { mode: "spawn", error: "collaborator_crashed", name: collabName, exitCode, logTail },
+          { mode: "spawn", error: "collaborator_crashed", name: collabName, exitCode, logTail,
+            stage: "spawn", durationMs: spawnDurationMs, crashClass: cc, nextStep },
         );
       }
       if (error === "cancelled") {
         await gracefulDismiss(entry);
         return result(
           `Spawn cancelled — collaborator "${collabName}" dismissed.`,
-          { mode: "spawn", error: "cancelled", name: collabName },
+          { mode: "spawn", error: "cancelled", name: collabName,
+            stage: "spawn", durationMs: spawnDurationMs },
         );
       }
       // stalled — do NOT dismiss, collaborator may resume
@@ -739,7 +763,8 @@ export async function executeSpawn(
         `Error: Collaborator "${collabName}" appears stalled — no output for ${Math.round((stallDurationMs ?? 0) / 1000)}s. ` +
         `The collaborator is still running. Retry, dismiss and re-spawn, or ask the user for guidance. ` +
         `Do NOT proceed without a collaborator — tell the user about the failure.`,
-        { mode: "spawn", error: "stalled", name: collabName, stallDurationMs },
+        { mode: "spawn", error: "stalled", name: collabName, stallDurationMs,
+          stage: "spawn", durationMs: spawnDurationMs, nextStep: "escalate_to_user" },
       );
     }
 
