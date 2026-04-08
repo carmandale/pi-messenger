@@ -779,6 +779,15 @@ export async function executeDismiss(
     );
   }
 
+  // D4: check if this was a completed collaborator (auto-dismissed after phase:complete) — spec 068
+  if (_state.completedCollaborators.has(name)) {
+    return result(
+      `Collaborator "${name}" was already auto-dismissed after phase:complete. ` +
+      `No further pi_messenger calls needed — proceed to writing your artifacts.`,
+      { mode: "dismiss", error: "already_completed", name },
+    );
+  }
+
   const entry = findCollaboratorByName(name);
   if (!entry) {
     return result(

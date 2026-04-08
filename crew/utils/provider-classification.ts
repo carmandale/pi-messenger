@@ -111,6 +111,11 @@ export function extractProviderTerminalErrorFromLogLine(line: string): ProviderT
     }
   }
 
+  // D2: RPC error response format — {type: "response", success: false, error: "..."} (spec 068)
+  if (event?.type === "response" && event?.success === false && typeof event?.error === "string") {
+    candidates.push(event.error);
+  }
+
   for (const candidate of candidates) {
     const parsed = parseProviderTerminalErrorMessage(candidate);
     if (parsed) {
