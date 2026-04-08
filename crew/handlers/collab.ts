@@ -142,6 +142,8 @@ export async function finalizeSpawnProviderError(
   collabName: string,
   providerError: ProviderTerminalError,
   logTail?: string,
+  durationMs?: number,
+  stage?: "spawn" | "send",
 ) {
   await gracefulDismiss(entry);
   const sanitizedProviderError = sanitizeProviderTerminalError(providerError);
@@ -154,7 +156,9 @@ export async function finalizeSpawnProviderError(
     `${sanitizedProviderError.errorMessage}\n\n` +
     `Stopped immediately so you can switch/reload credentials and retry.` +
     (sanitizedLogTail ? `\n\nLog tail:\n${sanitizedLogTail}` : ""),
-    { mode: "spawn", error: "provider_error", name: collabName, providerError: sanitizedProviderError, logTail: sanitizedLogTail },
+    { mode: stage ?? "spawn", error: "provider_error", name: collabName,
+      providerError: sanitizedProviderError, logTail: sanitizedLogTail,
+      stage: stage ?? "spawn", durationMs, nextStep: "check_credentials" },
   );
 }
 
@@ -361,10 +365,23 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
         return;
       }
 
-      // Check crash
+      // Check crash — but first scan log for provider error (spec 068: crash+provider race)
       if (entry.proc.exitCode !== null) {
         clearInterval(timer);
         entry.lifecycle = "error";  // D1 (spec 068)
+        // Scan log one final time — a provider error written just before exit
+        // should be reported as provider_error, not generic crashed
+        const finalProviderError = readProviderTerminalError();
+        if (finalProviderError) {
+          const logTail = readLogTail();
+          resolve({
+            ok: false,
+            error: "provider_error",
+            providerError: finalProviderError,
+            logTail: redactSensitiveText(logTail) || undefined,
+          });
+          return;
+        }
         const logTail = readLogTail();
         resolve({
           ok: false,
@@ -736,7 +753,7 @@ export async function executeSpawn(
       const spawnDurationMs = Date.now() - spawnStartTime;  // D3: wall-clock duration (spec 068)
 
       if (error === "provider_error" && providerError) {
-        return finalizeSpawnProviderError(entry, collabName, providerError, logTail);
+        return finalizeSpawnProviderError(entry, collabName, providerError, logTail, spawnDurationMs, "spawn");
       }
 
       if (error === "crashed") {

@@ -103,36 +103,48 @@ describe("T-R1: stale inbox message rejection (spec 057)", () => {
 // ─── T-R2: Session ID deliverFn gate (spec 068, D8) ─────────────────────────
 
 describe("T-R2: session ID deliverFn gate (spec 068, D8)", () => {
-  // This tests the deliverMessage function's session ID filtering logic.
-  // Since deliverMessage is a closure inside the extension boot, we test the
-  // core filtering logic directly: PI_COLLAB_SESSION_ID env check + msg.sessionId match.
+  // Mirrors the actual deliverMessage gate logic from index.ts:
+  // if (collabSessionId && msg.sessionId !== collabSessionId) → drop (return true)
+  // This is not a tautological field check — it exercises the exact boolean expression.
 
   const SESSION_ID = "abc12345";
 
-  it("accepts message with matching sessionId", () => {
+  /**
+   * Replicates the session gate logic from index.ts deliverMessage.
+   * Returns "accept" if message passes, "drop" if it should be consumed/discarded.
+   */
+  function sessionGate(collabSessionId: string | undefined, msg: AgentMailMessage): "accept" | "drop" {
+    if (collabSessionId) {
+      if (msg.sessionId !== collabSessionId) {
+        return "drop"; // consume stale message — store deletes file
+      }
+    }
+    return "accept";
+  }
+
+  it("accepts message with matching sessionId when gate is active", () => {
     const msg = makeMessage({ sessionId: SESSION_ID });
-    // With PI_COLLAB_SESSION_ID set, matching sessionId → accept
-    expect(msg.sessionId).toBe(SESSION_ID);
-    expect(msg.sessionId === SESSION_ID).toBe(true);
+    expect(sessionGate(SESSION_ID, msg)).toBe("accept");
   });
 
-  it("rejects message with mismatched sessionId", () => {
+  it("drops message with mismatched sessionId when gate is active", () => {
     const msg = makeMessage({ sessionId: "wrong-id" });
-    expect(msg.sessionId !== SESSION_ID).toBe(true);
+    expect(sessionGate(SESSION_ID, msg)).toBe("drop");
   });
 
-  it("rejects message with missing sessionId", () => {
-    const msg = makeMessage(); // no sessionId
-    expect(msg.sessionId).toBeUndefined();
-    expect(msg.sessionId !== SESSION_ID).toBe(true);
+  it("drops message with missing sessionId when gate is active", () => {
+    const msg = makeMessage(); // no sessionId field
+    expect(sessionGate(SESSION_ID, msg)).toBe("drop");
   });
 
-  it("accepts all messages when PI_COLLAB_SESSION_ID is not set", () => {
-    // When env var is not set, the gate is a no-op → all messages accepted
-    const collabSessionId = undefined;
+  it("accepts all messages when gate is inactive (no env var)", () => {
     const msg = makeMessage({ sessionId: "anything" });
-    // No filtering when collabSessionId is undefined
-    expect(!collabSessionId || msg.sessionId === collabSessionId).toBe(true);
+    expect(sessionGate(undefined, msg)).toBe("accept");
+  });
+
+  it("accepts all messages without sessionId when gate is inactive", () => {
+    const msg = makeMessage(); // no sessionId
+    expect(sessionGate(undefined, msg)).toBe("accept");
   });
 });
 
@@ -195,6 +207,46 @@ describe("T-R5: RPC error format detection (spec 068, D2)", async () => {
     expect(parsed).not.toBeNull();
     expect(parsed?.statusCode).toBe(402);
     expect(parsed?.errorType).toBe("billing_error");
+  });
+});
+
+// ─── classifyCrash tests (spec 068, D3) ──────────────────────────────────────
+
+describe("classifyCrash (spec 068, D3)", async () => {
+  let classifyCrash: typeof import("../../crew/handlers/collab.js").classifyCrash;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("../../crew/handlers/collab.js");
+    classifyCrash = mod.classifyCrash;
+  });
+
+  it("classifies SIGKILL (137) as oom", () => {
+    expect(classifyCrash(137, "")).toBe("oom");
+  });
+
+  it("classifies signal deaths (>128) as signal", () => {
+    expect(classifyCrash(143, "")).toBe("signal"); // SIGTERM=15, 128+15=143
+  });
+
+  it("classifies exit 0 as clean_exit", () => {
+    expect(classifyCrash(0, "")).toBe("clean_exit");
+  });
+
+  it("classifies exit null as unknown", () => {
+    expect(classifyCrash(null, "")).toBe("unknown");
+  });
+
+  it("classifies provider error from log tail", () => {
+    const logTail = JSON.stringify({
+      type: "message_end",
+      message: { errorMessage: '429 {"type":"error","error":{"type":"rate_limit_error","message":"limit"}}' },
+    });
+    expect(classifyCrash(1, logTail)).toBe("provider_error");
+  });
+
+  it("returns unknown for generic exit code with clean log", () => {
+    expect(classifyCrash(1, "some normal output")).toBe("unknown");
   });
 });
 

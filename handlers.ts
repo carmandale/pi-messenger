@@ -496,6 +496,7 @@ export async function executeSend(
                 providerError: sanitizedProviderError,
                 dismissed: recipient,
                 conversationComplete: true,
+                stage: "send", durationMs: Date.now() - sendTimestamp, nextStep: "check_credentials",
                 ...(sanitizedLogTail ? { logTail: sanitizedLogTail } : {}),
               },
             );
