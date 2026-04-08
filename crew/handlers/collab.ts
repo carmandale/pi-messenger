@@ -520,6 +520,7 @@ export async function executeSpawn(
   state.completedCollaborators.delete(collabName);
 
   const collabId = randomUUID().slice(0, 8);
+  const collabSessionId = randomUUID().slice(0, 8);  // D8: session isolation (spec 068)
 
   // Build args — RPC mode, no -p flag (prompt goes via stdin)
   // Collaborators get their instructions via --append-system-prompt.
@@ -585,6 +586,7 @@ export async function executeSpawn(
     ...envOverrides,
     PI_AGENT_NAME: collabName,
     PI_CREW_COLLABORATOR: "1",
+    PI_COLLAB_SESSION_ID: collabSessionId,
   };
 
   // Stdout/stderr → temp log file
@@ -633,6 +635,7 @@ export async function executeSpawn(
     logFile,
     // A4c: heartbeat file path — convention-based, same dir as registry JSON (spec 009)
     heartbeatFile: path.join(dirs.registry, `${collabName}.heartbeat`),
+    collabSessionId,  // D8: session isolation (spec 068)
   };
   registerWorker(entry);
 

@@ -39,6 +39,7 @@ export interface CollaboratorEntry extends BaseWorkerEntry {
    *  Used for dual-signal stall detection in pollForCollaboratorMessage and gracefulDismiss. */
   heartbeatFile?: string;
   peerTerminal?: boolean;  // set when collaborator sends phase:"complete"
+  collabSessionId?: string;  // D8: session isolation for stale-message filtering (spec 068)
 }
 
 export type WorkerEntry = RegularWorker | LobbyWorkerEntry | CollaboratorEntry;

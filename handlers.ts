@@ -357,7 +357,7 @@ export async function executeSend(
       // D2 + D4: terminal send — deliver and dismiss without blocking
       if (phase === "complete" || collabEntry.peerTerminal) {
         const preview = message!.length > 200 ? message!.slice(0, 197) + "..." : message!;
-        store.sendMessageToAgent(state, dirs, recipient, message!, replyTo, phase);
+        store.sendMessageToAgent(state, dirs, recipient, message!, replyTo, phase, collabEntry.collabSessionId);
         messagesSentThisSession++;
         logFeedEvent(cwd, state.agentName, "message", recipient, preview);
 
@@ -395,7 +395,7 @@ export async function executeSend(
             return 0;
           }
         })();
-        const outbound = store.sendMessageToAgent(state, dirs, recipient, message, replyTo, phase);
+        const outbound = store.sendMessageToAgent(state, dirs, recipient, message, replyTo, phase, collabEntry.collabSessionId);
         messagesSentThisSession++;
         const preview = message.length > 200 ? message.slice(0, 197) + "..." : message;
         logFeedEvent(cwd, state.agentName, "message", recipient, preview);

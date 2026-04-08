@@ -1017,6 +1017,7 @@ export function sendMessageToAgent(
   text: string,
   replyTo?: string,
   phase?: string,
+  sessionId?: string,
 ): AgentMailMessage {
   const targetInbox = join(dirs.inbox, to);
   ensureDirSync(targetInbox);
@@ -1029,6 +1030,7 @@ export function sendMessageToAgent(
     timestamp: new Date().toISOString(),
     replyTo: replyTo ?? null,
     ...(phase ? { phase } : {}),
+    ...(sessionId ? { sessionId } : {}),
   };
 
   const random = Math.random().toString(36).substring(2, 8);

@@ -65,6 +65,7 @@ export interface AgentMailMessage {
   timestamp: string;
   replyTo: string | null;
   phase?: string;  // "review" | "challenge" | "revise" | "approved" | "complete"
+  sessionId?: string;  // D8: collaboration session ID for stale-message isolation (spec 068)
 }
 
 export interface ReservationConflict {

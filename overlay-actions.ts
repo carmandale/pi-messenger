@@ -8,7 +8,7 @@ import * as crewStore from "./crew/store.js";
 import { executeTaskAction as runTaskAction } from "./crew/task-actions.js";
 import type { Task } from "./crew/types.js";
 import { getLiveWorkers } from "./crew/live-progress.js";
-import { hasActiveWorker } from "./crew/registry.js";
+import { hasActiveWorker, findCollaboratorByName } from "./crew/registry.js";
 import { cancelPlanningRun } from "./crew/state.js";
 
 interface ConfirmAction {
@@ -306,6 +306,12 @@ function sendDirectMessage(
   tui: TUI,
   viewState: CrewViewState,
 ): void {
+  // D8: collaborators are only messaged via spawn/send pipeline (spec 068)
+  if (findCollaboratorByName(target)) {
+    setNotification(viewState, tui, false, `${target} is a collaborator — use spawn/send pipeline`);
+    tui.requestRender();
+    return;
+  }
   try {
     const msg = sendMessageToAgent(state, dirs, target, text);
     addToChatHistory(state, target, msg);
@@ -335,8 +341,10 @@ function sendBroadcastMessage(
     return;
   }
 
+  // D8: filter out collaborators from broadcast — they're only messaged via spawn/send (spec 068)
+  const nonCollabPeers = peers.filter(p => !findCollaboratorByName(p.name));
   let sentCount = 0;
-  for (const peer of peers) {
+  for (const peer of nonCollabPeers) {
     try {
       sendMessageToAgent(state, dirs, peer.name, text);
       sentCount++;

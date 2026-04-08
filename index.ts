@@ -127,6 +127,17 @@ export default function piMessengerExtension(pi: ExtensionAPI) {
   // ===========================================================================
 
   function deliverMessage(msg: AgentMailMessage): boolean {
+    // D8: Session isolation — collaborators drop messages from other sessions (spec 068)
+    const collabSessionId = process.env.PI_COLLAB_SESSION_ID;
+    if (collabSessionId) {
+      if (msg.sessionId !== collabSessionId) {
+        // Consume the stale message (return true → store deletes the file)
+        // This prevents retry loops and stale cross-session contamination
+        pi.log?.(`Dropped stale message from ${msg.from} (sessionId ${msg.sessionId ?? "missing"} !== ${collabSessionId})`);
+        return true;
+      }
+    }
+
     // If this sender is being blocked for a collaborator exchange,
     // leave the file for the blocking poll to consume
     if (state.blockingCollaborators.has(msg.from)) {
