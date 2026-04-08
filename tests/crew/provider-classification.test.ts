@@ -89,4 +89,47 @@ describe("crew/utils/provider-classification", () => {
     expect(parsed?.statusCode).toBe(429);
     expect(parsed?.errorType).toBe("rate_limit_error");
   });
+
+  // D7: RPC error format tests (spec 068)
+  it("extracts terminal error from RPC response format with status prefix", () => {
+    const line = JSON.stringify({
+      type: "response",
+      command: "prompt",
+      success: false,
+      error: '429 {"type":"error","error":{"type":"rate_limit_error","message":"limit"},"request_id":"req_rpc"}',
+    });
+    const parsed = extractProviderTerminalErrorFromLogLine(line);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.statusCode).toBe(429);
+    expect(parsed?.errorType).toBe("rate_limit_error");
+    expect(parsed?.requestId).toBe("req_rpc");
+  });
+
+  it("extracts terminal error from RPC response with plain JSON error", () => {
+    const line = JSON.stringify({
+      type: "response",
+      command: "prompt",
+      success: false,
+      error: '{"type":"error","error":{"type":"insufficient_quota","message":"no credits"},"request_id":"req_quota"}',
+    });
+    const parsed = extractProviderTerminalErrorFromLogLine(line);
+    expect(parsed).not.toBeNull();
+    expect(parsed?.errorType).toBe("insufficient_quota");
+    expect(parsed?.requestId).toBe("req_quota");
+  });
+
+  it("ignores successful RPC responses", () => {
+    const line = JSON.stringify({ type: "response", command: "prompt", success: true });
+    expect(extractProviderTerminalErrorFromLogLine(line)).toBeNull();
+  });
+
+  it("ignores RPC responses with non-terminal errors", () => {
+    const line = JSON.stringify({
+      type: "response",
+      command: "prompt",
+      success: false,
+      error: '{"type":"error","error":{"type":"server_error","message":"retry"}}',
+    });
+    expect(extractProviderTerminalErrorFromLogLine(line)).toBeNull();
+  });
 });
