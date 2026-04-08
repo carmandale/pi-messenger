@@ -109,6 +109,7 @@ describe("provider_error cleanup invariants", () => {
       startedAt: Date.now(),
       promptTmpDir: null,
       logFile: path.join(tmpDir, "collab.log"),
+      lifecycle: "active",
     };
     fs.writeFileSync(collabEntry.logFile!, "boot\n");
     registry.registerWorker(collabEntry);
@@ -175,6 +176,7 @@ describe("provider_error cleanup invariants", () => {
       startedAt: Date.now(),
       promptTmpDir: null,
       logFile: path.join(tmpDir, "spawn.log"),
+      lifecycle: "active",
     };
     fs.writeFileSync(collabEntry.logFile!, "boot\n");
     registry.registerWorker(collabEntry);

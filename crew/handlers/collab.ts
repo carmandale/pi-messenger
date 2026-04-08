@@ -338,6 +338,7 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
       // Check cancellation
       if (signal?.aborted) {
         clearInterval(timer);
+        entry.lifecycle = "error";  // D1 (spec 068)
         resolve({ ok: false, error: "cancelled" });
         return;
       }
@@ -345,6 +346,7 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
       // Check crash
       if (entry.proc.exitCode !== null) {
         clearInterval(timer);
+        entry.lifecycle = "error";  // D1 (spec 068)
         const logTail = readLogTail();
         resolve({
           ok: false,
@@ -372,6 +374,9 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
               const peerComplete = msg.phase === "complete";
               if (peerComplete) {
                 entry.peerTerminal = true;
+                entry.lifecycle = "completing";  // D1 (spec 068)
+              } else if (entry.lifecycle === "spawning") {
+                entry.lifecycle = "active";  // D1: first message received (spec 068)
               }
               resolve({ ok: true, message: msg, peerComplete: peerComplete || undefined });
               return;
@@ -386,6 +391,7 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
       const providerError = readProviderTerminalError();
       if (providerError) {
         clearInterval(timer);
+        entry.lifecycle = "error";  // D1 (spec 068)
         const logTail = readLogTail();
         resolve({
           ok: false,
@@ -409,6 +415,7 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
       });
       if (stallResult.stalled) {
         clearInterval(timer);
+        entry.lifecycle = "error";  // D1 (spec 068)
         const logTail = readLogTail();
         resolve({
           ok: false,
@@ -426,6 +433,7 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
       const ceiling = stallResult.heartbeatActive ? hardCeilingMs : resolvedPollTimeoutMs;
       if (now - startTime >= ceiling) {
         clearInterval(timer);
+        entry.lifecycle = "error";  // D1 (spec 068)
         const logTail = readLogTail();
         resolve({
           ok: false,
@@ -448,6 +456,7 @@ export function pollForCollaboratorMessage(opts: PollOptions): Promise<PollResul
     if (signal) {
       signal.addEventListener("abort", () => {
         clearInterval(timer);
+        entry.lifecycle = "error";  // D1 (spec 068)
         resolve({ ok: false, error: "cancelled" });
       }, { once: true });
     }
@@ -636,6 +645,7 @@ export async function executeSpawn(
     // A4c: heartbeat file path — convention-based, same dir as registry JSON (spec 009)
     heartbeatFile: path.join(dirs.registry, `${collabName}.heartbeat`),
     collabSessionId,  // D8: session isolation (spec 068)
+    lifecycle: "spawning",  // D1: initial state (spec 068)
   };
   registerWorker(entry);
 
@@ -654,6 +664,7 @@ export async function executeSpawn(
 
     if (!ready) {
       // Collaborator failed to join mesh — clean up
+      entry.lifecycle = "error";  // D1: mesh join failure (spec 068)
       try { proc.stdin!.end(); } catch {}
       if (proc.exitCode === null) proc.kill("SIGTERM");
       unregisterWorker(cwd, taskId);
@@ -813,6 +824,8 @@ export async function executeDismiss(
 export async function gracefulDismiss(
   entry: CollaboratorEntry,
 ): Promise<void> {
+  entry.lifecycle = "done";  // D1: terminal state (spec 068)
+
   // A5: Helper to unlink heartbeat file — called from BOTH branches (spec 009, AD4/R2e)
   // Crash path takes the early-return branch; without this the file would be orphaned.
   const unlinkHeartbeat = () => {

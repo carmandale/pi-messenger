@@ -29,6 +29,10 @@ export interface LobbyWorkerEntry extends BaseWorkerEntry {
   aliveFile: string | null;
 }
 
+/** D1: Semantic lifecycle state for collaborators (spec 068).
+ *  Additive — all existing proc.exitCode checks remain as low-level process state. */
+export type CollabLifecycle = "spawning" | "active" | "completing" | "done" | "error";
+
 export interface CollaboratorEntry extends BaseWorkerEntry {
   type: "collaborator";
   spawnedBy: number;  // PID of spawning agent session
@@ -40,6 +44,7 @@ export interface CollaboratorEntry extends BaseWorkerEntry {
   heartbeatFile?: string;
   peerTerminal?: boolean;  // set when collaborator sends phase:"complete"
   collabSessionId?: string;  // D8: session isolation for stale-message filtering (spec 068)
+  lifecycle: CollabLifecycle;  // D1: semantic lifecycle state (spec 068)
 }
 
 export type WorkerEntry = RegularWorker | LobbyWorkerEntry | CollaboratorEntry;

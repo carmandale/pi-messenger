@@ -45,6 +45,7 @@ describe("CollaboratorEntry in registry", () => {
       startedAt: Date.now(),
       promptTmpDir: null,
       logFile: null,
+      lifecycle: "active",  // D1 default for tests (spec 068)
       ...overrides,
     };
   }

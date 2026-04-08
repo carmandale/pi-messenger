@@ -65,6 +65,7 @@ function makeCollabEntry(overrides: Partial<CollaboratorEntry> = {}): Collaborat
     startedAt: Date.now(),
     promptTmpDir: null,
     logFile: null,
+    lifecycle: "active",  // D1 default for tests (spec 068)
     ...overrides,
   };
 }
@@ -1130,6 +1131,7 @@ describe("pollForCollaboratorMessage — heartbeat-aware (spec 009)", () => {
       promptTmpDir: null,
       logFile: null,
       heartbeatFile: undefined as string | undefined,
+      lifecycle: "active" as const,  // D1 default for tests (spec 068)
       ...overrides,
     };
   }
