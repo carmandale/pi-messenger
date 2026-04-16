@@ -1021,6 +1021,10 @@ export function sendMessageToAgent(
 ): AgentMailMessage {
   const targetInbox = join(dirs.inbox, to);
   ensureDirSync(targetInbox);
+  // Spawn waits are session-gated. When a spawned collaborator replies from a
+  // pi-native runtime, every outbound message must inherit the collaborator
+  // session id unless a more specific one was provided explicitly.
+  const effectiveSessionId = sessionId ?? process.env.PI_COLLAB_SESSION_ID;
 
   const msg: AgentMailMessage = {
     id: randomUUID(),
@@ -1030,7 +1034,7 @@ export function sendMessageToAgent(
     timestamp: new Date().toISOString(),
     replyTo: replyTo ?? null,
     ...(phase ? { phase } : {}),
-    ...(sessionId ? { sessionId } : {}),
+    ...(effectiveSessionId ? { sessionId: effectiveSessionId } : {}),
   };
 
   const random = Math.random().toString(36).substring(2, 8);
